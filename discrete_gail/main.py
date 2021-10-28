@@ -75,8 +75,10 @@ def main():
     discrim_optim = optim.Adam(discrim.parameters(), lr=args.learning_rate)
     
     # load demonstrations
-    expert_demo, _ = pickle.load(open('./expert_demo/expert_demo.p', "rb"))
-    demonstrations = np.array(expert_demo)
+    # expert_demo, _ = pickle.load(open('./expert_demo/grid/', "rb"))
+    # demonstrations = np.array(expert_demo)
+
+    demonstrations = np.load('./expert_demo/grid/expert_demo_MiniGrid-MultiRoom-N6-v0.npy')
     
     # writer = SummaryWriter(args.logdir)
     
