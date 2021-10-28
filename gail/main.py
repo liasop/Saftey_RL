@@ -41,8 +41,12 @@ parser.add_argument('--total_sample_size', type=int, default=2048,
                     help='total sample size to collect before PPO update (default: 2048)')
 parser.add_argument('--batch_size', type=int, default=64, 
                     help='batch size to update (default: 64)')
-parser.add_argument('--max_iter_num', type=int, default=500,
-                    help='maximal number of main iterations (default: 500)')
+parser.add_argument('--suspend_accu_exp', type=float, default=0.8,
+                    help='accuracy for suspending discriminator about expert data (default: 0.8)')
+parser.add_argument('--suspend_accu_gen', type=float, default=0.8,
+                    help='accuracy for suspending discriminator about generated data (default: 0.8)')
+parser.add_argument('--max_iter_num', type=int, default=4000,
+                    help='maximal number of main iterations (default: 4000)')
 parser.add_argument('--seed', type=int, default=500,
                     help='random seed (default: 500)')
 parser.add_argument('--logdir', type=str, default='logs',
@@ -76,8 +80,8 @@ def main():
     demonstrations = np.array(expert_demo)
     print("demonstrations.shape", demonstrations.shape)
     
-    # writer = SummaryWriter(args.logdir)
-    
+    writer = SummaryWriter(args.logdir)
+
     if args.load_model is not None:
         saved_ckpt_path = os.path.join(os.getcwd(), 'save_model', str(args.load_model))
         ckpt = torch.load(saved_ckpt_path)
@@ -93,7 +97,8 @@ def main():
         print("Loaded OK ex. Zfilter N {}".format(running_state.rs.n))
 
     
-    episodes = 0    
+    episodes = 0
+    train_discrim_flag = True
 
     for iter in range(args.max_iter_num):
         actor.eval(), critic.eval()
@@ -138,32 +143,36 @@ def main():
             scores.append(score)
         
         score_avg = np.mean(scores)
-        print('{} episode score is {:.2f}'.format(episodes, score_avg))
-        # writer.add_scalar('log/score', float(score_avg), iter)
+        print('{}:: {} episode score is {:.2f}'.format(iter, episodes, score_avg))
+        writer.add_scalar('log/score', float(score_avg), iter)
 
-        actor.train(), critic.train(), discrim.train() 
-        train_discrim(discrim, memory, discrim_optim, demonstrations, args)
+        actor.train(), critic.train(), discrim.train()
+        if train_discrim_flag:
+            expert_acc, learner_acc = train_discrim(discrim, memory, discrim_optim, demonstrations, args)
+            print("Expert: %.2f%% | Learner: %.2f%%" % (expert_acc * 100, learner_acc * 100))
+            if expert_acc > args.suspend_accu_exp and learner_acc > args.suspend_accu_gen:
+                train_discrim_flag = False
         train_actor_critic(actor, critic, memory, actor_optim, critic_optim, args)
 
-        # if iter % 100:
-        #     score_avg = int(score_avg)
+        if iter % 100:
+            score_avg = int(score_avg)
 
-        #     model_path = os.path.join(os.getcwd(),'save_model')
-        #     if not os.path.isdir(model_path):
-        #         os.makedirs(model_path)
+            model_path = os.path.join(os.getcwd(),'save_model')
+            if not os.path.isdir(model_path):
+                os.makedirs(model_path)
 
-        #     ckpt_path = os.path.join(model_path, 'ckpt_'+ str(score_avg)+'.pth.tar')
+            ckpt_path = os.path.join(model_path, 'ckpt_'+ str(score_avg)+'.pth.tar')
 
-        #     save_checkpoint({
-        #         'actor': actor.state_dict(),
-        #         'critic': critic.state_dict(),
-        #         'discrim': discrim.state_dict(),
-        #         'z_filter_n':running_state.rs.n,
-        #         'z_filter_m': running_state.rs.mean,
-        #         'z_filter_s': running_state.rs.sum_square,
-        #         'args': args,
-        #         'score': score_avg
-        #     }, filename=ckpt_path)
+            save_checkpoint({
+                'actor': actor.state_dict(),
+                'critic': critic.state_dict(),
+                'discrim': discrim.state_dict(),
+                'z_filter_n':running_state.rs.n,
+                'z_filter_m': running_state.rs.mean,
+                'z_filter_s': running_state.rs.sum_square,
+                'args': args,
+                'score': score_avg
+            }, filename=ckpt_path)
 
 if __name__=="__main__":
     main()
